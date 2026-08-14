@@ -7,6 +7,7 @@ author:             Peter Dobsan
 maintainer:         pdobsan@gmail.com
 extra-source-files:
 data-files:
+  configs/default-config.yaml
 
 flag lib-gpgme
   description: Use the gpgme API-s
@@ -49,6 +50,7 @@ common common
     utf8-string,
     warp,
     yaml,
+    file-embed,
   if flag(lib-gpgme)
     cpp-options: -DLIB_GPGME
     build-depends:

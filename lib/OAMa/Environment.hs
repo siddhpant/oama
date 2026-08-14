@@ -3,9 +3,9 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultilineStrings #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module OAMa.Environment (
   AuthRecord (..),
@@ -38,6 +38,7 @@ import Data.Aeson.Types (
  )
 import Data.ByteString.UTF8 qualified as BSU
 import Data.Char (isSpace)
+import Data.FileEmbed (embedStringFile)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
@@ -393,76 +394,4 @@ printTemplate :: IO ()
 printTemplate = putStr initialConfig
 
 initialConfig :: String
-initialConfig =
-  "## oama version "
-    <> versionInfo
-    <> """
-
-       ## This is a YAML configuration file, indentation matters.
-       ## Double ## indicates comments while single # default values.
-       ## Not all defaults are shown, for full list run `oama printenv`
-       ## and look at the `services:` section.
-
-       ## Possible options for keeping refresh and access tokens:
-       ## GPG - in a gpg encrypted file $XDG_STATE_HOME/oama/<email-address>.oauth
-       ##       (XDG_STATE_HOME defaults to ~/.local/state)
-       ## GPG - in a gpg encrypted file ~/.local/state/oama/<email-address>.oauth
-       ## KEYRING - in the keyring of a password manager with Secret Service API
-       ##
-       ## Choose exactly one.
-
-       encryption:
-           tag: KEYRING
-
-       # encryption:
-       #   tag: GPG
-       #   contents: your-KEY-ID
-
-       ## Builtin service providers
-       ## - google
-       ## - microsoft
-       ## Required fields: client_id, client_secret
-       ##
-       services:
-         google:
-           client_id: application-CLIENT-ID
-           client_secret: application-CLIENT-SECRET
-         ## Alternatively get them from a password manager using a shell command.
-         ## If both variants are present then the _cmd versions get the priority.
-         ## For example:
-         # client_id_cmd: |
-         #   pass email/my-app | head -1
-         # client_secret_cmd: |
-         #   pass email/my-app | head -2 | tail -1
-         #  auth_scope: https://mail.google.com/
-
-         microsoft:
-            client_id: application-CLIENT-ID
-         ## client_secret is not needed for device code flow
-         #  auth_endpoint: https://login.microsoftonline.com/common/oauth2/v2.0/devicecode
-         ##
-         ## client_secret might be needed for other authorization flows
-         #  client_secret: application-CLIENT_SECRET
-         ## auth_endpoint: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
-         #
-         #  auth_scope: https://outlook.office.com/IMAP.AccessAsUser.All
-         #     https://outlook.office.com/SMTP.Send
-         #     offline_access
-         #  tenant: common
-
-         ## User configured providers
-         ## Required fields: client_id, client_secret, auth_endpoint, auth_scope, token_endpoint
-         ##
-         ## For example:
-         # yahoo:
-         #   client_id: application-CLIENT-ID
-         #   client_id_cmd: |
-         #     password manager command ...
-         #   client_secret: application-CLIENT_SECRET
-         #   client_secret_cmd: |
-         #     password manager command ...
-         #   auth_endpoint: EDIT-ME!
-         #   auth_scope: EDIT-ME!
-         #   token_endpoint: EDIT-ME!
-
-       """
+initialConfig = $(embedStringFile "configs/default-config.yaml")
