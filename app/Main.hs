@@ -12,9 +12,9 @@ main = do
   withSyslog "oama" [] Mail $ do
     env <- loadEnvironment
     case optCommand $ options env of
-      Oauth2 emailAddress -> getEmailAuth env (EmailAddress emailAddress)
-      ShowCreds emailAddress -> showCreds env (EmailAddress emailAddress)
-      Renew emailAddress -> forceRenew env (EmailAddress emailAddress)
+      Oauth2 serv emailAddress -> getEmailAuth env (EmailAddress emailAddress) serv
+      ShowCreds serv emailAddress -> showCreds env (EmailAddress emailAddress) serv
+      Renew serv emailAddress -> forceRenew env (EmailAddress emailAddress) serv
       Authorize servName emailAddress nohint device -> authorizeEmail env servName (EmailAddress emailAddress) nohint device
       PrintEnv -> pprintEnv env
       PrintTemplate -> printTemplate

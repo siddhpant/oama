@@ -42,10 +42,11 @@ data Opts = Opts
   }
   deriving (Show, Generic, Yaml.ToJSON, Yaml.FromJSON)
 
+-- Command now carries service + email for the commands that operate on a service
 data Command
-  = Oauth2 String
-  | ShowCreds String
-  | Renew String
+  = Oauth2 String String        -- service, email
+  | ShowCreds String String     -- service, email
+  | Renew String String         -- service, email
   | Authorize String String Bool Bool
   | PrintEnv
   | PrintTemplate
@@ -89,19 +90,25 @@ programOptions =
     <*> hsubparser (oauth2 <> showcreds <> renew <> authorize <> printEnv <> printTemplate)
 
 oauth2 :: Mod CommandFields Command
-oauth2 = command "access" (info oauth2Options (progDesc "Get the access token for email"))
+oauth2 = command "access" (info oauth2Options (progDesc "Get the access token for a (service, email) pair."))
 oauth2Options :: Parser Command
-oauth2Options = Oauth2 <$> strArgument (metavar "<email>" <> help "Email address")
+oauth2Options = Oauth2
+  <$> strArgument (metavar "<service>" <> help "Service name")
+  <*> strArgument (metavar "<email>" <> help "Email address")
 
 showcreds :: Mod CommandFields Command
-showcreds = command "show" (info showcredsOptions (progDesc "Show current credentials for email"))
+showcreds = command "show" (info showcredsOptions (progDesc "Show current credentials for a (service, email) pair."))
 showcredsOptions :: Parser Command
-showcredsOptions = ShowCreds <$> strArgument (metavar "<email>" <> help "Email address")
+showcredsOptions = ShowCreds
+  <$> strArgument (metavar "<service>" <> help "Service name")
+  <*> strArgument (metavar "<email>" <> help "Email address")
 
 renew :: Mod CommandFields Command
-renew = command "renew" (info renewOptions (progDesc "Renew the access token of email"))
+renew = command "renew" (info renewOptions (progDesc "Renew the access token for a (service, email) pair."))
 renewOptions :: Parser Command
-renewOptions = Renew <$> strArgument (metavar "<email>" <> help "Email address")
+renewOptions = Renew
+  <$> strArgument (metavar "<service>" <> help "Service name")
+  <*> strArgument (metavar "<email>" <> help "Email address")
 
 authorize :: Mod CommandFields Command
 authorize = command "authorize" (info authorizeOptions (progDesc "Authorize OAuth2 for service/email"))

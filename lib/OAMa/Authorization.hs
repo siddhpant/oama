@@ -54,13 +54,17 @@ import Web.Twain qualified as TW
 --
 -- The managed credentials are kept in either in a libsecret based keyring (like Gnome's)
 -- or in GPG encrypted files. Only one of these methods can be used.
+--
+-- Multiple services can be stored for the same email address:
+-- - KEYRING: stored with attribute "oama:service"="email".
+-- - GPG: stored in file "email.service.oama".
 
-getAuthRecord :: Environment -> EmailAddress -> IO AuthRecord
-getAuthRecord env email_ = do
+getAuthRecord :: Environment -> EmailAddress -> String -> IO AuthRecord
+getAuthRecord env email_ serv = do
   getAR env.config.encryption
  where
   getAR KEYRING = do
-    lookupSecret "oama" email_.unEmailAddress
+    lookupSecret ("oama" <> ":" <> serv) email_.unEmailAddress
       >>= \case
         Right o ->
           case eitherDecode' (BLU.fromString o) :: Either String AuthRecord of
@@ -68,7 +72,7 @@ getAuthRecord env email_ = do
             Right rec -> return rec
         Left e -> fatalError "getAuthRecord" (show e)
   getAR (GPG _) = do
-    let gpgFile = env.state_dir <> "/" <> email_.unEmailAddress <> ".oama"
+    let gpgFile = env.state_dir <> "/" <> email_.unEmailAddress <> "." <> serv <> ".oama"
     authRecExist <- D.doesFileExist gpgFile
     if authRecExist
       then do
@@ -82,17 +86,20 @@ getAuthRecord env email_ = do
       else do
         printf "You must run `oama authorize ...` before using other operations.\n"
         fatalError "getAuthRecord" $
-          printf "Can't find authorization record for %s\n" (unEmailAddress email_)
+          printf "Can't find authorization record for %s with service %s\n" (unEmailAddress email_) serv
 
-putAuthRecord :: Environment -> EmailAddress -> AuthRecord -> IO ()
-putAuthRecord env email_ rec = do
+putAuthRecord :: Environment -> EmailAddress -> String -> AuthRecord -> IO ()
+putAuthRecord env email_ serv rec = do
   let jsrec = BLU.toString $ encode rec
-      m = email_.unEmailAddress
-      gpgFile = env.state_dir <> "/" <> email_.unEmailAddress <> ".oama"
+      addr = email_.unEmailAddress
+      keyring_attrib_key = "oama" <> ":" <> serv
+      keyring_label = "oama - " <> serv <> " - " <> addr
+      gpgFile = env.state_dir <> "/" <> addr <> "." <> serv <> ".oama"
+
       putAR :: Encryption -> IO ()
       putAR KEYRING =
         do
-          storeSecret ("oama - " ++ m) "oama" m jsrec
+          storeSecret keyring_label keyring_attrib_key addr jsrec
           >>= \case
             Right _ -> return ()
             Left e -> do
@@ -114,16 +121,16 @@ timeStampFormat = "%Y-%m-%d %H:%M %Z"
 
 -- | Get access_token for then given email
 -- while renewing it when necessary
-getEmailAuth :: Environment -> EmailAddress -> IO ()
-getEmailAuth env email_ = do
-  getEmailAuth' env email_
+getEmailAuth :: Environment -> EmailAddress -> String -> IO ()
+getEmailAuth env email_ serv = do
+  getEmailAuth' env email_ serv
     >>= \case
       Right rec -> putStrLn $ access_token rec
       Left errmsg -> fatalError "getEmailAuth" $ printf "getEmailAuth: %s" (show errmsg)
 
-getEmailAuth' :: Environment -> EmailAddress -> IO (Either AuthError AuthRecord)
-getEmailAuth' env email_ = do
-  authrec <- getAuthRecord env email_
+getEmailAuth' :: Environment -> EmailAddress -> String -> IO (Either AuthError AuthRecord)
+getEmailAuth' env email_ serv = do
+  authrec <- getAuthRecord env email_ serv
   now <- getCurrentTime
   let expd = fromMaybe "2000-01-01 12:00 UTC" authrec.exp_date
   if now > parseTimeOrError True defaultTimeLocale timeStampFormat expd
@@ -144,8 +151,8 @@ getEmailAuth' env email_ = do
                       scope = newat.scope,
                       token_type = newat.token_type
                     }
-            putAuthRecord env email_ authrec'
-            logger Notice $ printf "new access token for %s - expires at %s" (unEmailAddress email_) expDate
+            putAuthRecord env email_ serv authrec'
+            logger Notice $ printf "new access token for %s (service: %s) - expires at %s" (unEmailAddress email_) serv expDate
             return $ Right authrec'
     else return $ Right authrec
 
@@ -242,9 +249,9 @@ renewAccessToken env (Just serv) rft = do
     (fromJust api.token_endpoint)
     qs
 
-forceRenew :: Environment -> EmailAddress -> IO ()
-forceRenew env email_ = do
-  authrec <- getAuthRecord env email_
+forceRenew :: Environment -> EmailAddress -> String -> IO ()
+forceRenew env email_ serv = do
+  authrec <- getAuthRecord env email_ serv
   now <- getCurrentTime
   renewAccessToken env (service authrec) (refresh_token authrec)
     >>= \case
@@ -262,14 +269,14 @@ forceRenew env email_ = do
                   scope = scope newat,
                   token_type = token_type newat
                 }
-        putAuthRecord env email_ authrec'
-        logger Notice $ printf "new access token for %s - expires at %s" (unEmailAddress email_) expDate
-        printf "Obtained new access token for %s - expires at %s.\n" (unEmailAddress email_) expDate
+        putAuthRecord env email_ serv authrec'
+        logger Notice $ printf "new access token for %s (service: %s) - expires at %s" (unEmailAddress email_) serv expDate
+        printf "Obtained new access token for %s (service: %s) - expires at %s.\n" (unEmailAddress email_) serv expDate
 
 -- | Show current credentials for the given email
-showCreds :: Environment -> EmailAddress -> IO ()
-showCreds env email_ = do
-  getEmailAuth' env email_
+showCreds :: Environment -> EmailAddress -> String -> IO ()
+showCreds env email_ serv = do
+  getEmailAuth' env email_ serv
     >>= \case
       Right rec -> do
         printf "email: %s\n" (unEmailAddress $ fromJust rec.email)
@@ -395,14 +402,14 @@ storeAuthRecord env servName email_ authr = do
   let expire = addUTCTime (expires_in authr - 300) now
       expDate = formatTime defaultTimeLocale timeStampFormat expire
       authRec = authr{exp_date = Just expDate, email = Just email_, service = Just servName}
-  putAuthRecord env email_ authRec
+  putAuthRecord env email_ servName authRec
   printf "Received refresh and access tokens ...\n"
   if env.config.encryption == KEYRING
     then printf "They have been stored in the keyring of your password manager. ...\n"
     else
       printf
         "They have been saved in %s encrypted ...\n"
-        (env.state_dir <> "/" <> email_.unEmailAddress <> ".oama")
+        (env.state_dir <> "/" <> email_.unEmailAddress <> "." <> servName <> ".oama")
 
 data AuthResult = AuthSuccess | AuthFailure
 
@@ -445,13 +452,13 @@ localWebServer mvar env redirectURI serv email_ noHint = do
                         TW.send $
                           TW.html $
                             BLU.fromString $
-                              printf "<h4>Received new refresh and access tokens for %s</h4>" (unEmailAddress email_)
+                              printf "<h4>Received new refresh and access tokens for %s (service: %s)</h4>" (unEmailAddress email_) serv
                                 <> if env.config.encryption == KEYRING
                                   then printf "<p>They have been stored in the keyring of your password manager.</p>"
                                   else
                                     printf
                                       "<p>They have been saved in <samp>%s</samp> encrypted.</p>"
-                                      (env.state_dir <> "/" <> email_.unEmailAddress <> ".oama")
+                                      (env.state_dir <> "/" <> email_.unEmailAddress <> "." <> serv <> ".oama")
                 else liftIO $ fatalError "localWebServer" (printf "states don't match: %s /= %s" state state')
 
             casService :: TW.ResponderM a
